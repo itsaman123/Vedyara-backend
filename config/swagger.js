@@ -43,6 +43,16 @@ const options = {
                         password: { type: 'string', format: 'password' }
                     }
                 },
+                AdminLogin:{
+                    type: 'object',
+                    required: ['email', 'password', 'role'],
+                    properties: {
+                        email: { type: 'string', format: 'email' },
+                        password: { type: 'string', format: 'password' },
+                        role: { type: 'string' }
+                    }
+
+                },
                 AuthResponse: {
                     type: 'object',
                     properties: {
@@ -67,7 +77,7 @@ const swaggerSpec = swaggerJsdoc(options)
 // Manually add paths for the user routes
 swaggerSpec.paths = swaggerSpec.paths || {}
 
-swaggerSpec.paths['/api/users/register'] = {
+swaggerSpec.paths['/users/register'] = {
     post: {
         tags: ['Users'],
         summary: 'Register a new user',
@@ -83,7 +93,7 @@ swaggerSpec.paths['/api/users/register'] = {
     }
 }
 
-swaggerSpec.paths['/api/users/login'] = {
+swaggerSpec.paths['/users/login'] = {
     post: {
         tags: ['Users'],
         summary: 'Login and receive access and refresh tokens',
@@ -99,7 +109,7 @@ swaggerSpec.paths['/api/users/login'] = {
     }
 }
 
-swaggerSpec.paths['/api/users/refresh'] = {
+swaggerSpec.paths['/users/refresh'] = {
     post: {
         tags: ['Users'],
         summary: 'Exchange refresh token for new access (and rotated refresh token)',
@@ -115,7 +125,7 @@ swaggerSpec.paths['/api/users/refresh'] = {
     }
 }
 
-swaggerSpec.paths['/api/users/logout'] = {
+swaggerSpec.paths['/users/logout'] = {
     post: {
         tags: ['Users'],
         summary: 'Logout and revoke provided refresh token',
@@ -129,7 +139,7 @@ swaggerSpec.paths['/api/users/logout'] = {
     }
 }
 
-swaggerSpec.paths['/api/users/me'] = {
+swaggerSpec.paths['/users/me'] = {
     get: {
         tags: ['Users'],
         summary: 'Get current user profile',
@@ -137,6 +147,21 @@ swaggerSpec.paths['/api/users/me'] = {
         responses: {
             '200': { description: 'Current user', content: { 'application/json': { schema: { $ref: '#/components/schemas/User' } } } },
             '401': { description: 'Not authenticated' }
+        }
+    }
+}
+swaggerSpec.paths['/admin-users/v1/login'] = {
+    post: {
+        tags: ['Admin'],
+        summary: 'Login and receive access and refresh tokens',
+        requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/AdminLogin' } } }
+        },
+        responses: {
+            '200': { description: 'Auth tokens', content: { 'application/json': { schema: { $ref: '#/components/schemas/AuthResponse' } } } },
+            '400': { description: 'Missing fields' },
+            '401': { description: 'Invalid credentials' }
         }
     }
 }

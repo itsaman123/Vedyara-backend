@@ -4,6 +4,7 @@
     "test": "standard && nyc --reporter=lcov mocha tests/*",
     "lint": "standard --fix",
     "start": "node server.js",
+    "seed:users": "node scripts/seedUsers.js",
     "coverage": "codecov"
   },
   "dependencies": {
