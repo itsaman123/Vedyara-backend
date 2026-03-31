@@ -18,9 +18,8 @@ app.use(morgan)
 
 // Define routes
 app.use('/', require('./routes'))
-// User routes
-app.use('/users', require('./routes/user.route'))
-app.use('/admin-users', require('./routes/adminUser.route'))
+    // User routes
+    app.use('/users', require('./routes/user.route'))
 
 // Swagger UI
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec))

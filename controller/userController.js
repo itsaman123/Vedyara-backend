@@ -45,30 +45,19 @@ async function login(req, res) {
         user.refreshTokens = user.refreshTokens.concat([refreshToken])
         await user.save()
 
-        return res.json({ accessToken, refreshToken })
+        return res.json({
+            accessToken,
+            refreshToken,
+            user: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role
+            }
+        })
     } catch (err) {
         logger.error('Login error', err)
         return res.status(500).json({ message: 'Server error' })
-    }
-}
-async function adminLogin(req, res) {
-    try {
-        const { email, password } = req.body;
-        if (!email || !password) return res.status(400).json({ message: 'Missing fields' });
-        const user = await User.findOne({ email, role: 'admin' })
-        if (!user) return res.status(401).json({ message: 'Invalid credentials' });
-        const ok = await bcrypt.compare(password, user.password)
-        if (!ok) return res.status(401).json({ message: 'Invalid credentials' });
-        const accessToken = generateAccessToken(user)
-        const refreshToken = generateRefreshToken(user)
-        user.refreshTokens = user.refreshTokens.concat([refreshToken])
-        await user.save()
-        return res.json({ accessToken, refreshToken })
-
-    }
-    catch (err) {
-        logger.error('Admin login error', err);
-        return res.status(500).json({ message: 'Server Error' });
     }
 }
 
@@ -129,4 +118,4 @@ async function me(req, res) {
     return res.json({ user: req.user })
 }
 
-module.exports = { register, login, adminLogin, refreshToken, logout, me }
+module.exports = { register, login, refreshToken, logout, me }
