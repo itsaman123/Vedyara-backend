@@ -1,7 +1,7 @@
 const mongoose = require('mongoose')
 const logger = require('../logging/logger')
-
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vedyara'
+require('dotenv').config();
+const MONGO_URI = process.env.MONGO_URI;
 
 async function connectDB() {
     try {

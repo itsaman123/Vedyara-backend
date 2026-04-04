@@ -26,5 +26,7 @@ app.use('/', require('./routes'))
 
 // Swagger UI
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec))
-
+// app.get("/api/docs-json", (req, res) => {
+//   res.json(swaggerSpec);
+// });
 module.exports = app
