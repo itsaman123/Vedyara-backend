@@ -20,6 +20,8 @@ app.use(morgan)
 app.use('/', require('./routes'))
     // User routes
     app.use('/users', require('./routes/user.route'))
+    app.use('/products', require('./routes/product.route'))
+    app.use('/dashboard', require('./routes/dashboard.route'))
 
 // Swagger UI
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec))
