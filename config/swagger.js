@@ -328,4 +328,40 @@ swaggerSpec.paths['/dashboard/product/{id}/traffic'] = {
     }
 }
 
+swaggerSpec.paths['/health'] = {
+    get: {
+        tags: ['System'],
+        summary: 'Check the server and database connection health and list environment integrations',
+        responses: {
+            '200': { 
+                description: 'Server health status',
+                content: {
+                    'application/json': { 
+                        schema: { 
+                            type: 'object',
+                            properties: {
+                                server: { type: 'string' },
+                                database: { type: 'string' },
+                                currentEnvironment: { type: 'string' },
+                                environments: { 
+                                    type: 'array', 
+                                    items: { 
+                                        type: 'object',
+                                        properties: {
+                                            key: { type: 'string' },
+                                            configured: { type: 'boolean' }
+                                        }
+                                    } 
+                                },
+                                uptime: { type: 'number' },
+                                timestamp: { type: 'string', format: 'date-time' }
+                            }
+                        } 
+                    }
+                } 
+            }
+        }
+    }
+}
+
 module.exports = swaggerSpec
