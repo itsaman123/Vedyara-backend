@@ -1,0 +1,1056 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Vedyara Backend API",
+    "description": "API documentation for the Vedyara grocery and organic food backend. Includes customer authentication, admin authentication, and admin inventory management APIs currently implemented in the backend.",
+    "version": "1.0.0"
+  },
+  "host": "localhost:8000",
+  "basePath": "/",
+  "schemes": [
+    "http"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "API health checks"
+    },
+    {
+      "name": "Users",
+      "description": "Customer authentication and profile APIs"
+    },
+    {
+      "name": "Admin Auth",
+      "description": "Admin authentication APIs"
+    },
+    {
+      "name": "Inventory",
+      "description": "Admin inventory movement and stock tracking APIs"
+    }
+  ],
+  "securityDefinitions": {
+    "BearerAuth": {
+      "type": "apiKey",
+      "name": "Authorization",
+      "in": "header",
+      "description": "JWT bearer token. Example: Bearer eyJhbGciOiJIUzI1NiIs..."
+    },
+    "CookieAuth": {
+      "type": "apiKey",
+      "name": "jwt",
+      "in": "cookie",
+      "description": "JWT stored in an HTTP-only cookie after login."
+    }
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Check API health",
+        "description": "Returns a simple success response when the API is running.",
+        "responses": {
+          "200": {
+            "description": "API is running",
+            "schema": {
+              "$ref": "#/definitions/SuccessResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/register": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Register customer",
+        "description": "Creates a new customer account, hashes the password, sets a JWT cookie, and returns the user profile with a token.",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RegisterRequest"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "User registered successfully",
+            "schema": {
+              "$ref": "#/definitions/AuthResponse"
+            }
+          },
+          "400": {
+            "description": "Missing required fields",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "409": {
+            "description": "User already exists",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/login": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Login customer",
+        "description": "Authenticates a customer using email and password, sets a JWT cookie, and returns a token.",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/LoginRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User authenticated successfully",
+            "schema": {
+              "$ref": "#/definitions/AuthResponse"
+            }
+          },
+          "400": {
+            "description": "Email and password are required",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid email or password",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/logout": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Logout user",
+        "description": "Clears the JWT cookie for the current session.",
+        "responses": {
+          "200": {
+            "description": "User logged out successfully",
+            "schema": {
+              "$ref": "#/definitions/SuccessResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/forgot-password": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Request password reset",
+        "description": "Sends a password reset link if an account exists for the submitted email.",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ForgotPasswordRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Password reset response returned",
+            "schema": {
+              "$ref": "#/definitions/SuccessResponse"
+            }
+          },
+          "400": {
+            "description": "Email is required",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Email provider is not configured or failed",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/reset-password/{token}": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Reset password",
+        "description": "Resets a user's password using a valid password reset token.",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Password reset token from the reset email."
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ResetPasswordRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Password reset successfully",
+            "schema": {
+              "$ref": "#/definitions/SuccessResponse"
+            }
+          },
+          "400": {
+            "description": "Password reset link is invalid, expired, or password is missing",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/profile": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get current user profile",
+        "description": "Returns the authenticated user's profile.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "CookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User profile fetched successfully",
+            "schema": {
+              "$ref": "#/definitions/UserProfileResponse"
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired token",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Update current user profile",
+        "description": "Updates the authenticated user's name, email, or password.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "CookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UpdateProfileRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User profile updated successfully",
+            "schema": {
+              "$ref": "#/definitions/UserProfileResponse"
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired token",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "409": {
+            "description": "Email is already in use",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/auth/login": {
+      "post": {
+        "tags": [
+          "Admin Auth"
+        ],
+        "summary": "Login admin",
+        "description": "Authenticates an admin account. The account must exist in the users collection with role set to admin.",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/LoginRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Admin authenticated successfully",
+            "schema": {
+              "$ref": "#/definitions/AdminAuthResponse"
+            }
+          },
+          "400": {
+            "description": "Validation failed",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid admin email or password",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/auth/me": {
+      "get": {
+        "tags": [
+          "Admin Auth"
+        ],
+        "summary": "Get current admin profile",
+        "description": "Returns the authenticated admin profile. Requires an admin JWT.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "CookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Admin profile fetched successfully",
+            "schema": {
+              "$ref": "#/definitions/AdminProfileResponse"
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired token",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Authenticated user is not an admin",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/inventory": {
+      "get": {
+        "tags": [
+          "Inventory"
+        ],
+        "summary": "Get inventory movements",
+        "description": "Returns paginated inventory movement history. Requires an admin JWT.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "CookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "added",
+              "removed",
+              "sold"
+            ]
+          },
+          {
+            "name": "productId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "description": "MongoDB ObjectId of the product."
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "description": "Search by product name or SKU."
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "createdAt",
+              "quantity",
+              "type"
+            ],
+            "default": "createdAt"
+          },
+          {
+            "name": "sortOrder",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "desc"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inventory list fetched successfully",
+            "schema": {
+              "$ref": "#/definitions/InventoryListResponse"
+            }
+          },
+          "400": {
+            "description": "Validation failed",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired token",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Authenticated user is not an admin",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/inventory/add": {
+      "post": {
+        "tags": [
+          "Inventory"
+        ],
+        "summary": "Add inventory movement",
+        "description": "Creates an inventory movement and updates the product stock in a MongoDB transaction. Requires an admin JWT.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "CookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AddInventoryRequest"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Inventory updated successfully",
+            "schema": {
+              "$ref": "#/definitions/AddInventoryResponse"
+            }
+          },
+          "400": {
+            "description": "Validation failed or stock would go below zero",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired token",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "403": {
+            "description": "Authenticated user is not an admin",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Product not found",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "SuccessResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": true
+        },
+        "message": {
+          "type": "string",
+          "example": "Request completed successfully"
+        },
+        "data": {
+          "type": "object",
+          "x-nullable": true
+        }
+      }
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": false
+        },
+        "message": {
+          "type": "string",
+          "example": "Validation failed"
+        },
+        "errors": {
+          "type": "array",
+          "x-nullable": true,
+          "items": {
+            "$ref": "#/definitions/ValidationError"
+          }
+        },
+        "stack": {
+          "type": "string",
+          "x-nullable": true
+        }
+      }
+    },
+    "ValidationError": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string",
+          "example": "email"
+        },
+        "message": {
+          "type": "string",
+          "example": "\"email\" must be a valid email"
+        }
+      }
+    },
+    "RegisterRequest": {
+      "type": "object",
+      "required": [
+        "name",
+        "email",
+        "password"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "example": "Aarav Sharma"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "example": "aarav@example.com"
+        },
+        "password": {
+          "type": "string",
+          "format": "password",
+          "example": "StrongPass123"
+        }
+      }
+    },
+    "LoginRequest": {
+      "type": "object",
+      "required": [
+        "email",
+        "password"
+      ],
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "example": "admin@vedyara.com"
+        },
+        "password": {
+          "type": "string",
+          "format": "password",
+          "example": "StrongPass123"
+        }
+      }
+    },
+    "ForgotPasswordRequest": {
+      "type": "object",
+      "required": [
+        "email"
+      ],
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "example": "aarav@example.com"
+        }
+      }
+    },
+    "ResetPasswordRequest": {
+      "type": "object",
+      "required": [
+        "password"
+      ],
+      "properties": {
+        "password": {
+          "type": "string",
+          "format": "password",
+          "example": "NewStrongPass123"
+        }
+      }
+    },
+    "UpdateProfileRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "example": "Aarav Sharma"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "example": "aarav.updated@example.com"
+        },
+        "password": {
+          "type": "string",
+          "format": "password",
+          "example": "NewStrongPass123"
+        }
+      }
+    },
+    "User": {
+      "type": "object",
+      "properties": {
+        "_id": {
+          "type": "string",
+          "example": "64f000000000000000000001"
+        },
+        "name": {
+          "type": "string",
+          "example": "Aarav Sharma"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "example": "aarav@example.com"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "user"
+          ],
+          "example": "user"
+        }
+      }
+    },
+    "Admin": {
+      "type": "object",
+      "properties": {
+        "_id": {
+          "type": "string",
+          "example": "64f000000000000000000002"
+        },
+        "name": {
+          "type": "string",
+          "example": "Vedyara Admin"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "example": "admin@vedyara.com"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "admin"
+          ],
+          "example": "admin"
+        }
+      }
+    },
+    "AuthResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": true
+        },
+        "message": {
+          "type": "string",
+          "example": "User authenticated successfully"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "user": {
+              "$ref": "#/definitions/User"
+            },
+            "token": {
+              "type": "string",
+              "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+            }
+          }
+        }
+      }
+    },
+    "AdminAuthResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": true
+        },
+        "message": {
+          "type": "string",
+          "example": "Admin authenticated successfully"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "admin": {
+              "$ref": "#/definitions/Admin"
+            },
+            "token": {
+              "type": "string",
+              "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+            }
+          }
+        }
+      }
+    },
+    "UserProfileResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": true
+        },
+        "message": {
+          "type": "string",
+          "example": "User profile fetched successfully"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "user": {
+              "$ref": "#/definitions/User"
+            }
+          }
+        }
+      }
+    },
+    "AdminProfileResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": true
+        },
+        "message": {
+          "type": "string",
+          "example": "Admin profile fetched successfully"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "admin": {
+              "$ref": "#/definitions/Admin"
+            }
+          }
+        }
+      }
+    },
+    "ProductSummary": {
+      "type": "object",
+      "properties": {
+        "_id": {
+          "type": "string",
+          "example": "64f000000000000000000100"
+        },
+        "name": {
+          "type": "string",
+          "example": "Organic Apples"
+        },
+        "slug": {
+          "type": "string",
+          "example": "organic-apples"
+        },
+        "sku": {
+          "type": "string",
+          "example": "VED-APPLE-001"
+        },
+        "stock": {
+          "type": "integer",
+          "example": 50
+        },
+        "unit": {
+          "type": "string",
+          "example": "kg"
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "example": [
+            "https://cdn.vedyara.com/products/organic-apples.jpg"
+          ]
+        }
+      }
+    },
+    "InventoryMovement": {
+      "type": "object",
+      "properties": {
+        "_id": {
+          "type": "string",
+          "example": "64f000000000000000000200"
+        },
+        "productId": {
+          "$ref": "#/definitions/ProductSummary"
+        },
+        "quantity": {
+          "type": "integer",
+          "example": 25
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "added",
+            "removed",
+            "sold"
+          ],
+          "example": "added"
+        },
+        "note": {
+          "type": "string",
+          "example": "Initial organic produce stock"
+        },
+        "createdBy": {
+          "$ref": "#/definitions/Admin"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "example": "2026-05-09T16:00:00.000Z"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "example": "2026-05-09T16:00:00.000Z"
+        }
+      }
+    },
+    "AddInventoryRequest": {
+      "type": "object",
+      "required": [
+        "productId",
+        "quantity"
+      ],
+      "properties": {
+        "productId": {
+          "type": "string",
+          "description": "MongoDB ObjectId of the product.",
+          "example": "64f000000000000000000100"
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 1,
+          "example": 25
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "added",
+            "removed"
+          ],
+          "default": "added",
+          "example": "added"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 500,
+          "example": "Initial organic produce stock"
+        }
+      }
+    },
+    "AddInventoryResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": true
+        },
+        "message": {
+          "type": "string",
+          "example": "Inventory updated successfully"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "inventory": {
+              "$ref": "#/definitions/InventoryMovement"
+            },
+            "product": {
+              "type": "object",
+              "properties": {
+                "_id": {
+                  "type": "string",
+                  "example": "64f000000000000000000100"
+                },
+                "name": {
+                  "type": "string",
+                  "example": "Organic Apples"
+                },
+                "sku": {
+                  "type": "string",
+                  "example": "VED-APPLE-001"
+                },
+                "stock": {
+                  "type": "integer",
+                  "example": 75
+                },
+                "status": {
+                  "type": "string",
+                  "example": "active"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "InventoryListResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": true
+        },
+        "message": {
+          "type": "string",
+          "example": "Inventory list fetched successfully"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/InventoryMovement"
+              }
+            },
+            "pagination": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer",
+                  "example": 1
+                },
+                "limit": {
+                  "type": "integer",
+                  "example": 20
+                },
+                "total": {
+                  "type": "integer",
+                  "example": 48
+                },
+                "pages": {
+                  "type": "integer",
+                  "example": 3
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

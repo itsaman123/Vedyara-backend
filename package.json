@@ -1,36 +1,31 @@
 {
-  "license": "MIT",
+  "name": "mern-auth",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
   "scripts": {
-    "test": "standard && nyc --reporter=lcov mocha tests/*",
-    "lint": "standard --fix",
-    "start": "node server.js",
-    "seed:users": "node scripts/seedUsers.js",
-    "coverage": "codecov"
+    "start": "node index.js",
+    "devStart": "nodemon index.js"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "cloudinary": "^1.41.3",
-    "compression": "^1.7.4",
+    "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
-    "dotenv": "^17.4.0",
-    "express": "^4.17.1",
-    "jsonwebtoken": "^9.0.0",
-    "mongoose": "^9.3.3",
-    "morgan": "^1.10.0",
-    "multer": "^2.1.1",
-    "multer-storage-cloudinary": "^4.0.0",
-    "redis": "^5.11.0",
-    "swagger-jsdoc": "^6.2.8",
-    "swagger-ui-express": "^4.6.3",
-    "winston": "^3.2.1"
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-async-handler": "^1.2.0",
+    "joi": "^18.2.1",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^7.5.0",
+    "morgan": "^1.10.1",
+    "resend": "^6.12.3",
+    "swagger-autogen": "^2.23.7"
   },
   "devDependencies": {
-    "chai": "^4.2.0",
-    "chai-http": "^4.3.0",
-    "codecov": "^3.7.1",
-    "mocha": "^7.1.1",
-    "nodemon": "^2.0.3",
-    "nyc": "^15.0.0",
-    "standard": "^14.3.3"
+    "nodemon": "^3.0.1"
   }
 }
