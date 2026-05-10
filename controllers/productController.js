@@ -10,7 +10,7 @@ const getProducts = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, search, category, featured, sortBy = "createdAt", sortOrder = "desc" } = req.query
 
   const filter = { status: "active" } // Only active products for public
-  
+
   if (category && category !== "all") {
     filter.category = category
   }
@@ -18,7 +18,7 @@ const getProducts = asyncHandler(async (req, res) => {
   if (featured === "true") {
     filter.featured = true
   }
-  
+
   if (search) {
     filter.$or = [
       { name: { $regex: search, $options: "i" } },
