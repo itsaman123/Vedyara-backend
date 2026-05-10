@@ -1,6 +1,7 @@
 import express from "express"
 import dotenv from "dotenv"
 import morgan from 'morgan'
+import path from "path"
 import userRoutes from "./routes/userRoutes.js"
 import adminRoutes from "./routes/adminRoutes.js"
 import cookieParser from "cookie-parser"
@@ -25,6 +26,7 @@ app.use(
 
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")))
 
 app.use(cookieParser())
 

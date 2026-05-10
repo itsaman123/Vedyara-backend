@@ -7,7 +7,9 @@ const notFound = (req, res, next) => {
 }
 
 const errorHandler = (err, req, res, next) => {
-  const statusCode = err.statusCode || (res.statusCode >= 400 ? res.statusCode : 500)
+  const statusCode =
+    err.statusCode ||
+    (err.name === "MulterError" ? 400 : res.statusCode >= 400 ? res.statusCode : 500)
   const message = err.message || "Something went wrong"
 
   return sendError(res, {

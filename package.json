@@ -6,13 +6,15 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "devStart": "nodemon index.js"
+    "devStart": "nodemon index.js",
+    "seed:admin": "node scripts/seedAdmin.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "cloudinary": "^1.41.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -22,6 +24,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^7.5.0",
     "morgan": "^1.10.1",
+    "multer": "^2.1.1",
+    "multer-storage-cloudinary": "^4.0.0",
     "resend": "^6.12.3",
     "swagger-autogen": "^2.23.7"
   },
