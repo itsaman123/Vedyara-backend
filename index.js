@@ -5,6 +5,8 @@ import path from "path"
 import userRoutes from "./routes/userRoutes.js"
 import adminRoutes from "./routes/adminRoutes.js"
 import productRoutes from "./routes/productRoutes.js"
+import cartRoutes from "./routes/cartRoutes.js"
+import wishlistRoutes from "./routes/wishlistRoutes.js"
 import cookieParser from "cookie-parser"
 import cors from "cors"
 import { errorHandler, notFound } from "./middlewares/errorMiddleware.js"
@@ -41,6 +43,8 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/v1/users", userRoutes)
 app.use("/api/v1/products", productRoutes)
+app.use("/api/v1/cart", cartRoutes)
+app.use("/api/v1/wishlist", wishlistRoutes)
 app.use("/api/admin", adminRoutes)
 app.use(notFound)
 app.use(errorHandler)
