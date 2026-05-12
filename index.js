@@ -7,6 +7,7 @@ import adminRoutes from "./routes/adminRoutes.js"
 import productRoutes from "./routes/productRoutes.js"
 import cartRoutes from "./routes/cartRoutes.js"
 import wishlistRoutes from "./routes/wishlistRoutes.js"
+import orderRoutes from "./routes/orderRoutes.js"
 import cookieParser from "cookie-parser"
 import cors from "cors"
 import { errorHandler, notFound } from "./middlewares/errorMiddleware.js"
@@ -45,6 +46,7 @@ app.use("/api/v1/users", userRoutes)
 app.use("/api/v1/products", productRoutes)
 app.use("/api/v1/cart", cartRoutes)
 app.use("/api/v1/wishlist", wishlistRoutes)
+app.use("/api/v1/orders", orderRoutes)
 app.use("/api/admin", adminRoutes)
 app.use(notFound)
 app.use(errorHandler)

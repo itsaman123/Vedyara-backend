@@ -20,6 +20,24 @@ const orderSchema = mongoose.Schema(
       trim: true,
       lowercase: true,
     },
+    items: [
+      {
+        product: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Product",
+          required: true,
+        },
+        quantity: {
+          type: Number,
+          required: true,
+          min: 1,
+        },
+        price: {
+          type: Number,
+          required: true,
+        },
+      },
+    ],
     itemsCount: {
       type: Number,
       required: true,
@@ -40,6 +58,15 @@ const orderSchema = mongoose.Schema(
       type: String,
       enum: ["awaiting", "paid", "refunded", "failed"],
       default: "awaiting",
+    },
+    razorpayOrderId: {
+      type: String,
+    },
+    razorpayPaymentId: {
+      type: String,
+    },
+    razorpaySignature: {
+      type: String,
     },
   },
   {
