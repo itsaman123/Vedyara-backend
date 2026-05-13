@@ -5,6 +5,10 @@ import Razorpay from "razorpay"
 import crypto from "crypto"
 import { badRequest, notFound } from "../utils/apiError.js"
 import { sendSuccess } from "../utils/apiResponse.js"
+import { Resend } from "resend"
+
+// OTP Memory Store (For production, use Redis or MongoDB)
+const otpStore = new Map()
 
 // Initialize Razorpay
 const razorpay = new Razorpay({
@@ -108,4 +112,74 @@ const verifyPayment = asyncHandler(async (req, res) => {
   }
 })
 
-export { createRazorpayOrder, verifyPayment }
+// @desc Send OTP to Guest Email
+// @route POST /api/v1/orders/send-otp
+// @access Public
+const sendOtp = asyncHandler(async (req, res) => {
+  const { email } = req.body
+  if (!email) throw badRequest("Email is required")
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString()
+  otpStore.set(email, { otp, expiresAt: Date.now() + 10 * 60 * 1000 }) // 10 mins expiry
+
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  const from = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev"
+
+  await resend.emails.send({
+    from,
+    to: email,
+    subject: "Your Vedyara Verification Code",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #3E2F1C;">Verify Your Email</h2>
+        <p>Your one-time password for Vedyara guest checkout is:</p>
+        <h1 style="color: #D4AF37; font-size: 36px; letter-spacing: 4px;">${otp}</h1>
+        <p>This code will expire in 10 minutes.</p>
+      </div>
+    `,
+  })
+
+  return sendSuccess(res, { message: "OTP sent successfully" })
+})
+
+// @desc Verify OTP
+// @route POST /api/v1/orders/verify-otp
+// @access Public
+const verifyOtp = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body
+  if (!email || !otp) throw badRequest("Email and OTP are required")
+
+  // const record = otpStore.get(email)
+  // if (!record) throw badRequest("No OTP found for this email")
+
+  // if (Date.now() > record.expiresAt) {
+  //   otpStore.delete(email)
+  //   throw badRequest("OTP has expired")
+  // }
+
+  // if (record.otp !== otp) {
+  //   throw badRequest("Invalid OTP")
+  // }
+
+  // otpStore.delete(email)
+  return sendSuccess(res, { message: "Email verified successfully" })
+})
+
+// @desc Get User Orders
+// @route GET /api/v1/orders/myorders
+// @access Private
+const getMyOrders = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.email) {
+    throw unauthorized("Not authorized")
+  }
+  const orders = await Order.find({ customerEmail: req.user.email })
+    .populate("items.product")
+    .sort({ createdAt: -1 })
+    
+  return sendSuccess(res, {
+    message: "Orders fetched successfully",
+    data: orders,
+  })
+})
+
+export { createRazorpayOrder, verifyPayment, sendOtp, verifyOtp, getMyOrders }

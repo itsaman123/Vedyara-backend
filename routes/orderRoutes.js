@@ -1,6 +1,6 @@
 import express from "express"
-import { createRazorpayOrder, verifyPayment } from "../controllers/orderController.js"
-// import { protect } from "../middlewares/authMiddleware.js"
+import { createRazorpayOrder, verifyPayment, sendOtp, verifyOtp, getMyOrders } from "../controllers/orderController.js"
+import { protect } from "../middlewares/authMiddleware.js"
 
 const router = express.Router()
 
@@ -8,5 +8,9 @@ const router = express.Router()
 // For now, let's keep them public so guests can buy too, or the controller handles it.
 router.post("/create", createRazorpayOrder)
 router.post("/verify", verifyPayment)
+router.post("/send-otp", sendOtp)
+router.post("/verify-otp", verifyOtp)
+
+router.get("/myorders", protect, getMyOrders)
 
 export default router
