@@ -11,6 +11,7 @@ const buildUserPayload = (user) => ({
   name: user.name,
   email: user.email,
   role: user.role,
+  addresses: user.addresses || [],
 })
 
 const hashResetToken = (token) =>
@@ -148,6 +149,79 @@ const updateUserProfile = asyncHandler(async (req, res) => {
   })
 })
 
+// @desc add user address
+// route /api/users/addresses
+// @method post
+const addUserAddress = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id)
+  
+  if (!user) {
+    throw notFound("User not found")
+  }
+
+  const { name, phone, address, city, pincode, isDefault } = req.body
+
+  if (!name || !phone || !address || !city || !pincode) {
+    throw badRequest("All address fields are required")
+  }
+
+  const newAddress = {
+    name,
+    phone,
+    address,
+    city,
+    pincode,
+    isDefault: isDefault || false
+  }
+
+  // If this is set to default or it's the first address, we might want to unset others
+  if (newAddress.isDefault) {
+    user.addresses.forEach(a => { a.isDefault = false })
+  } else if (user.addresses.length === 0) {
+    newAddress.isDefault = true
+  }
+
+  user.addresses.push(newAddress)
+  const updatedUser = await user.save()
+
+  return sendSuccess(res, {
+    statusCode: 201,
+    message: "Address added successfully",
+    data: {
+      user: buildUserPayload(updatedUser),
+    },
+  })
+})
+
+// @desc delete user address
+// route /api/users/addresses/:id
+// @method delete
+const deleteUserAddress = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id)
+  
+  if (!user) {
+    throw notFound("User not found")
+  }
+
+  const addressId = req.params.id
+  
+  user.addresses = user.addresses.filter(a => a._id.toString() !== addressId)
+  
+  // Ensure we still have a default if any left
+  if (user.addresses.length > 0 && !user.addresses.some(a => a.isDefault)) {
+    user.addresses[0].isDefault = true
+  }
+
+  const updatedUser = await user.save()
+
+  return sendSuccess(res, {
+    message: "Address deleted successfully",
+    data: {
+      user: buildUserPayload(updatedUser),
+    },
+  })
+})
+
 // @desc request password reset email
 // route /api/users/forgot-password
 // @method post
@@ -231,4 +305,6 @@ export {
   updateUserProfile,
   forgotPassword,
   resetPassword,
+  addUserAddress,
+  deleteUserAddress,
 }

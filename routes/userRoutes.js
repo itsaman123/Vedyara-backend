@@ -7,6 +7,8 @@ import {
   updateUserProfile,
   forgotPassword,
   resetPassword,
+  addUserAddress,
+  deleteUserAddress,
 } from "../controllers/userController.js"
 import { protect } from "../middlewares/authMiddleware.js"
 
@@ -21,5 +23,8 @@ router
   .route("/profile")
   .get(protect, getUserProfile)
   .put(protect, updateUserProfile)
+
+router.post("/addresses", protect, addUserAddress)
+router.delete("/addresses/:id", protect, deleteUserAddress)
 
 export default router

@@ -3,9 +3,11 @@ import Order from "../models/orderModel.js"
 import Product from "../models/productModel.js"
 import Razorpay from "razorpay"
 import crypto from "crypto"
-import { badRequest, notFound } from "../utils/apiError.js"
+import { badRequest, notFound, unauthorized } from "../utils/apiError.js"
 import { sendSuccess } from "../utils/apiResponse.js"
 import { Resend } from "resend"
+import User from "../models/userModel.js"
+import generateToken from "../utils/generateToken.js"
 
 // OTP Memory Store (For production, use Redis or MongoDB)
 const otpStore = new Map()
@@ -146,7 +148,7 @@ const sendOtp = asyncHandler(async (req, res) => {
 // @route POST /api/v1/orders/verify-otp
 // @access Public
 const verifyOtp = asyncHandler(async (req, res) => {
-  const { email, otp } = req.body
+  const { email, otp, name } = req.body
   if (!email || !otp) throw badRequest("Email and OTP are required")
 
   // const record = otpStore.get(email)
@@ -162,7 +164,30 @@ const verifyOtp = asyncHandler(async (req, res) => {
   // }
 
   // otpStore.delete(email)
-  return sendSuccess(res, { message: "Email verified successfully" })
+
+  let user = await User.findOne({ email })
+  if (!user) {
+    user = await User.create({
+      name: name || "Guest User",
+      email,
+      password: crypto.randomBytes(16).toString("hex"),
+    })
+  }
+
+  const token = generateToken(res, user._id)
+
+  return sendSuccess(res, { 
+    message: "Email verified successfully",
+    data: {
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      }
+    }
+  })
 })
 
 // @desc Get User Orders
