@@ -4,13 +4,14 @@ import User from "../models/userModel.js"
 import { forbidden, unauthorized } from "../utils/apiError.js"
 
 const protect = asyncHandler(async (req, res, next) => {
-  let token = req.cookies.jwt
+  let token = req.cookies?.jwt || req.headers["x-auth-token"] || req.headers.token
 
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer ")
-  ) {
-    token = req.headers.authorization.split(" ")[1]
+  if (req.headers.authorization) {
+    if (req.headers.authorization.startsWith("Bearer ")) {
+      token = req.headers.authorization.split(" ")[1]
+    } else {
+      token = req.headers.authorization
+    }
   }
 
   if (token) {

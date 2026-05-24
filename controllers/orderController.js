@@ -52,7 +52,15 @@ const createRazorpayOrder = asyncHandler(async (req, res) => {
     receipt: `receipt_${Date.now()}`,
   }
 
-  const razorpayOrder = await razorpay.orders.create(options)
+  let razorpayOrder
+  try {
+    razorpayOrder = await razorpay.orders.create(options)
+  } catch (rzpErr) {
+    const msg = rzpErr?.error?.description || rzpErr?.message || "Razorpay order creation failed"
+    const err = new Error(msg)
+    err.statusCode = rzpErr?.statusCode || 502
+    throw err
+  }
 
   // Create Order in database
   const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`

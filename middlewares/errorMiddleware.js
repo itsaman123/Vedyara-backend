@@ -7,6 +7,8 @@ const notFound = (req, res, next) => {
 }
 
 const errorHandler = (err, req, res, next) => {
+  console.error("[ERROR]", err)
+
   const statusCode =
     err.statusCode ||
     (err.name === "MulterError" ? 400 : res.statusCode >= 400 ? res.statusCode : 500)
