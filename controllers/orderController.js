@@ -198,6 +198,46 @@ const verifyOtp = asyncHandler(async (req, res) => {
   })
 })
 
+// @desc Create COD order
+// @route POST /api/v1/orders/create-cod
+// @access Private
+const createCodOrder = asyncHandler(async (req, res) => {
+  const { items, customerName, customerEmail, shippingAddress } = req.body
+
+  if (!items || items.length === 0) throw badRequest("No items in order")
+  if (!shippingAddress) throw badRequest("Shipping address is required")
+
+  let totalAmount = 0
+  const orderItems = []
+
+  for (const item of items) {
+    const product = await Product.findById(item.productId)
+    if (!product) throw notFound(`Product not found: ${item.productId}`)
+    const price = product.discountedPrice || product.price
+    totalAmount += price * item.quantity
+    orderItems.push({ product: product._id, quantity: item.quantity, price })
+  }
+
+  const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+  const order = await Order.create({
+    orderNumber,
+    customerName,
+    customerEmail,
+    shippingAddress,
+    items: orderItems,
+    itemsCount: items.reduce((acc, item) => acc + item.quantity, 0),
+    amount: totalAmount,
+    paymentMethod: "cod",
+    status: "processing",
+    paymentStatus: "awaiting",
+  })
+
+  return sendSuccess(res, {
+    message: "Order placed successfully",
+    data: { orderId: order._id, orderNumber: order.orderNumber },
+  })
+})
+
 // @desc Get User Orders
 // @route GET /api/v1/orders/myorders
 // @access Private
@@ -215,4 +255,4 @@ const getMyOrders = asyncHandler(async (req, res) => {
   })
 })
 
-export { createRazorpayOrder, verifyPayment, sendOtp, verifyOtp, getMyOrders }
+export { createRazorpayOrder, verifyPayment, sendOtp, verifyOtp, getMyOrders, createCodOrder }
