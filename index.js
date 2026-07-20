@@ -5,6 +5,7 @@ import path from "path"
 import userRoutes from "./routes/userRoutes.js"
 import adminRoutes from "./routes/adminRoutes.js"
 import productRoutes from "./routes/productRoutes.js"
+import videoRoutes from "./routes/videoRoutes.js"
 import cartRoutes from "./routes/cartRoutes.js"
 import wishlistRoutes from "./routes/wishlistRoutes.js"
 import orderRoutes from "./routes/orderRoutes.js"
@@ -47,6 +48,7 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/v1/users", userRoutes)
 app.use("/api/v1/products", productRoutes)
+app.use("/api/v1/videos", videoRoutes)
 app.use("/api/v1/cart", cartRoutes)
 app.use("/api/v1/wishlist", wishlistRoutes)
 app.use("/api/v1/orders", orderRoutes)

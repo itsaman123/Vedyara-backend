@@ -37,4 +37,27 @@ const getCloudinarySignature = asyncHandler(async (req, res) => {
   })
 })
 
-export { uploadProductImages, getCloudinarySignature }
+const getVideoCloudinarySignature = asyncHandler(async (req, res) => {
+  const timestamp = Math.round(new Date().getTime() / 1000)
+  const folder = "vedyara/videos"
+  const signature = cloudinary.utils.api_sign_request(
+    {
+      timestamp: timestamp,
+      folder,
+    },
+    process.env.CLOUDINARY_API_SECRET
+  )
+
+  return sendSuccess(res, {
+    message: "Cloudinary signature generated",
+    data: {
+      signature,
+      timestamp,
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+      folder,
+    },
+  })
+})
+
+export { uploadProductImages, getCloudinarySignature, getVideoCloudinarySignature }

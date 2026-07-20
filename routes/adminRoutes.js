@@ -17,11 +17,20 @@ import {
   updateProduct,
 } from "../controllers/adminProductController.js"
 import {
+  createVideo,
+  deleteVideo,
+  deleteVideos,
+  getVideoById,
+  getVideos as getAdminVideos,
+  updateVideo,
+} from "../controllers/adminVideoController.js"
+import {
   getOrderSummary,
   getOrders,
 } from "../controllers/adminOrderController.js"
 import {
   getCloudinarySignature,
+  getVideoCloudinarySignature,
   uploadProductImages as uploadProductImagesController,
 } from "../controllers/adminUploadController.js"
 import { adminOnly, protect } from "../middlewares/authMiddleware.js"
@@ -38,6 +47,12 @@ import {
   productListQuerySchema,
   updateProductSchema,
 } from "../validations/productValidation.js"
+import {
+  createVideoSchema,
+  deleteVideosSchema,
+  updateVideoSchema,
+  videoListQuerySchema,
+} from "../validations/videoValidation.js"
 import { orderListQuerySchema } from "../validations/orderValidation.js"
 
 const router = express.Router()
@@ -58,6 +73,13 @@ router.post(
   protect,
   adminOnly,
   getCloudinarySignature
+)
+
+router.post(
+  "/uploads/video-cloudinary-signature",
+  protect,
+  adminOnly,
+  getVideoCloudinarySignature
 )
 
 router.get(
@@ -91,6 +113,37 @@ router.delete(
   deleteProducts
 )
 router.delete("/products/:id", protect, adminOnly, deleteProduct)
+
+router.get(
+  "/videos",
+  protect,
+  adminOnly,
+  validateRequest(videoListQuerySchema, "query"),
+  getAdminVideos
+)
+router.get("/videos/:id", protect, adminOnly, getVideoById)
+router.post(
+  "/videos",
+  protect,
+  adminOnly,
+  validateRequest(createVideoSchema),
+  createVideo
+)
+router.put(
+  "/videos/:id",
+  protect,
+  adminOnly,
+  validateRequest(updateVideoSchema),
+  updateVideo
+)
+router.delete(
+  "/videos",
+  protect,
+  adminOnly,
+  validateRequest(deleteVideosSchema),
+  deleteVideos
+)
+router.delete("/videos/:id", protect, adminOnly, deleteVideo)
 
 router.get(
   "/orders",
