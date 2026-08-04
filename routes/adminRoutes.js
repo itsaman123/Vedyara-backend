@@ -25,6 +25,14 @@ import {
   updateVideo,
 } from "../controllers/adminVideoController.js"
 import {
+  createCombo,
+  deleteCombo,
+  deleteCombos,
+  getComboById,
+  getCombos as getAdminCombos,
+  updateCombo,
+} from "../controllers/adminComboController.js"
+import {
   getOrderSummary,
   getOrders,
 } from "../controllers/adminOrderController.js"
@@ -53,6 +61,12 @@ import {
   updateVideoSchema,
   videoListQuerySchema,
 } from "../validations/videoValidation.js"
+import {
+  createComboSchema,
+  deleteCombosSchema,
+  comboListQuerySchema,
+  updateComboSchema,
+} from "../validations/comboValidation.js"
 import { orderListQuerySchema } from "../validations/orderValidation.js"
 
 const router = express.Router()
@@ -144,6 +158,37 @@ router.delete(
   deleteVideos
 )
 router.delete("/videos/:id", protect, adminOnly, deleteVideo)
+
+router.get(
+  "/combos",
+  protect,
+  adminOnly,
+  validateRequest(comboListQuerySchema, "query"),
+  getAdminCombos
+)
+router.get("/combos/:id", protect, adminOnly, getComboById)
+router.post(
+  "/combos",
+  protect,
+  adminOnly,
+  validateRequest(createComboSchema),
+  createCombo
+)
+router.put(
+  "/combos/:id",
+  protect,
+  adminOnly,
+  validateRequest(updateComboSchema),
+  updateCombo
+)
+router.delete(
+  "/combos",
+  protect,
+  adminOnly,
+  validateRequest(deleteCombosSchema),
+  deleteCombos
+)
+router.delete("/combos/:id", protect, adminOnly, deleteCombo)
 
 router.get(
   "/orders",
