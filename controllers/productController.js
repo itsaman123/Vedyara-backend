@@ -12,7 +12,9 @@ const getProducts = asyncHandler(async (req, res) => {
   const filter = { status: "active" } // Only active products for public
 
   if (category && category !== "all") {
-    filter.category = category
+    // Case-insensitive exact match — admin data mixes "honey" and "Honey"
+    const escaped = String(category).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    filter.category = { $regex: `^${escaped}$`, $options: "i" }
   }
 
   if (featured === "true") {

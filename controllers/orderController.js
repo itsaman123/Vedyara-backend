@@ -255,4 +255,45 @@ const getMyOrders = asyncHandler(async (req, res) => {
   })
 })
 
-export { createRazorpayOrder, verifyPayment, sendOtp, verifyOtp, getMyOrders, createCodOrder }
+// Public lookup for the Track Order page. Requires both the order number and
+// the email on the order, and only returns fields safe to show a guest.
+const trackOrder = asyncHandler(async (req, res) => {
+  const orderNumber = String(req.query.orderNumber || "").trim()
+  const email = String(req.query.email || "").trim().toLowerCase()
+
+  if (!orderNumber || !email) {
+    throw badRequest("Order number and email are required")
+  }
+
+  const order = await Order.findOne({ orderNumber, customerEmail: email })
+    .populate("items.product", "name slug images unit")
+
+  if (!order) {
+    throw notFound("No order found with these details")
+  }
+
+  return sendSuccess(res, {
+    message: "Order fetched successfully",
+    data: {
+      orderNumber: order.orderNumber,
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      paymentMethod: order.paymentMethod,
+      amount: order.amount,
+      itemsCount: order.itemsCount,
+      city: order.shippingAddress?.city || null,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      items: order.items.map((item) => ({
+        name: item.product?.name || "Product",
+        slug: item.product?.slug || null,
+        image: item.product?.images?.[0] || null,
+        unit: item.product?.unit || null,
+        quantity: item.quantity,
+        price: item.price,
+      })),
+    },
+  })
+})
+
+export { createRazorpayOrder, verifyPayment, sendOtp, verifyOtp, getMyOrders, createCodOrder, trackOrder }

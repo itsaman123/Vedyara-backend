@@ -1,5 +1,5 @@
 import express from "express"
-import { createRazorpayOrder, verifyPayment, sendOtp, verifyOtp, getMyOrders, createCodOrder } from "../controllers/orderController.js"
+import { createRazorpayOrder, verifyPayment, sendOtp, verifyOtp, getMyOrders, createCodOrder, trackOrder } from "../controllers/orderController.js"
 import { protect } from "../middlewares/authMiddleware.js"
 
 const router = express.Router()
@@ -13,5 +13,6 @@ router.post("/verify-otp", verifyOtp)
 router.post("/create-cod", protect, createCodOrder)
 
 router.get("/myorders", protect, getMyOrders)
+router.get("/track", trackOrder)
 
 export default router
