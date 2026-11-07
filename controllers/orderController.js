@@ -1,240 +1,302 @@
 import asyncHandler from "express-async-handler"
+import mongoose from "mongoose"
 import Order from "../models/orderModel.js"
-import Product from "../models/productModel.js"
+import User from "../models/userModel.js"
 import Razorpay from "razorpay"
 import crypto from "crypto"
-import { badRequest, notFound, unauthorized } from "../utils/apiError.js"
+import { badRequest, createError, notFound } from "../utils/apiError.js"
 import { sendSuccess } from "../utils/apiResponse.js"
-import { Resend } from "resend"
-import User from "../models/userModel.js"
-import generateToken from "../utils/generateToken.js"
+import { buildOrderLines, logStockMovement, restoreStock, takeStock } from "../utils/orderUtils.js"
 
-// OTP Memory Store (For production, use Redis or MongoDB)
-const otpStore = new Map()
+const isRazorpayConfigured = () =>
+  Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET)
 
-// Initialize Razorpay
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_placeholder",
-  key_secret: process.env.RAZORPAY_KEY_SECRET || "placeholder_secret",
+const getRazorpay = () =>
+  new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  })
+
+const generateOrderNumber = () => `ORD-${Date.now()}-${crypto.randomInt(100, 1000)}`
+
+const hmacHex = (secret, payload) =>
+  crypto.createHmac("sha256", secret).update(payload).digest("hex")
+
+const signaturesMatch = (expected, received) => {
+  const a = Buffer.from(expected)
+  const b = Buffer.from(String(received || ""))
+  return a.length === b.length && crypto.timingSafeEqual(a, b)
+}
+
+const isOwner = (order, user) =>
+  order.user ? order.user.equals(user._id) : order.customerEmail === user.email
+
+// Online orders the customer never paid for are abandoned checkouts, not orders
+const ABANDONED_ONLINE = { paymentMethod: "razorpay", paymentStatus: { $in: ["awaiting", "failed"] } }
+
+const findOwnOrder = async (orderId, user) => {
+  if (!mongoose.isValidObjectId(orderId)) throw notFound("Order not found")
+
+  const order = await Order.findById(orderId)
+  if (!order || !isOwner(order, user)) throw notFound("Order not found")
+
+  return order
+}
+
+const toCustomerOrder = (order) => ({
+  _id: order._id,
+  orderNumber: order.orderNumber,
+  customerName: order.customerName,
+  customerEmail: order.customerEmail,
+  status: order.status,
+  paymentStatus: order.paymentStatus,
+  paymentMethod: order.paymentMethod,
+  amount: order.amount,
+  itemsCount: order.itemsCount,
+  shippingAddress: order.shippingAddress,
+  createdAt: order.createdAt,
+  updatedAt: order.updatedAt,
+  items: order.items.map((item) => {
+    // Older orders have no snapshot and rely on the populated product
+    const product = item.product instanceof mongoose.Types.ObjectId ? null : item.product
+    return {
+      productId: product?._id || item.product,
+      name: item.name || product?.name || "Product",
+      image: item.image || product?.images?.[0] || "",
+      slug: product?.slug || null,
+      quantity: item.quantity,
+      price: item.price,
+    }
+  }),
 })
 
-// @desc Create Razorpay order
+// Saves the checkout address (and phone, if missing) to the customer's profile
+const rememberCheckoutDetails = async (userId, address) => {
+  const user = await User.findById(userId)
+  if (!user) return
+
+  if (!user.phone) user.phone = address.phone
+  user.saveAddress(address)
+  await user.save()
+}
+
+// Moves an online order to paid exactly once, even if the browser callback
+// and the webhook arrive together.
+const markOrderPaid = async (order, { paymentId, signature }) => {
+  const paid = await Order.findOneAndUpdate(
+    { _id: order._id, paymentStatus: { $ne: "paid" } },
+    {
+      $set: {
+        paymentStatus: "paid",
+        // A captured payment revives an order cancelled when the window closed
+        status: "processing",
+        razorpayPaymentId: paymentId,
+        ...(signature ? { razorpaySignature: signature } : {}),
+      },
+    },
+    { new: true }
+  )
+
+  if (!paid) return Order.findById(order._id)
+
+  if (!paid.stockDeducted) {
+    // The money is already taken, so never fail here; oversold lines go to zero
+    const { taken } = await takeStock(paid.items, { allowShortfall: true })
+    paid.stockDeducted = true
+    await paid.save()
+    await logStockMovement(taken, { type: "sold", note: `Order ${paid.orderNumber}`, userId: paid.user })
+  }
+
+  return paid
+}
+
+// @desc Which payment methods checkout can offer
+// @route GET /api/v1/orders/payment-config
+// @access Public
+const getPaymentConfig = (_req, res) => {
+  const razorpayEnabled = isRazorpayConfigured()
+
+  return sendSuccess(res, {
+    message: "Payment config fetched successfully",
+    data: {
+      razorpayEnabled,
+      razorpayKeyId: razorpayEnabled ? process.env.RAZORPAY_KEY_ID : null,
+      codEnabled: true,
+    },
+  })
+}
+
+// @desc Create an online order and the matching Razorpay order
 // @route POST /api/v1/orders/create
-// @access Private (or public with customer info)
+// @access Private
 const createRazorpayOrder = asyncHandler(async (req, res) => {
-  const { items, customerName, customerEmail } = req.body
-
-  if (!items || items.length === 0) {
-    throw badRequest("No items in order")
+  if (!isRazorpayConfigured()) {
+    throw createError(503, "Online payment isn't available right now. Please choose Cash on Delivery.")
   }
 
-  let totalAmount = 0
-  const orderItems = []
-
-  for (const item of items) {
-    const product = await Product.findById(item.productId)
-    if (!product) {
-      throw notFound(`Product not found: ${item.productId}`)
-    }
-    const price = product.discountedPrice || product.price
-    totalAmount += price * item.quantity
-    orderItems.push({
-      product: product._id,
-      quantity: item.quantity,
-      price: price,
-    })
-  }
-
-  // Create Razorpay Order
-  const options = {
-    amount: Math.round(totalAmount * 100), // amount in paise
-    currency: "INR",
-    receipt: `receipt_${Date.now()}`,
-  }
+  const { items, shippingAddress, saveAddress } = req.body
+  const { lines, amount, itemsCount } = await buildOrderLines(items)
+  const orderNumber = generateOrderNumber()
 
   let razorpayOrder
   try {
-    razorpayOrder = await razorpay.orders.create(options)
+    razorpayOrder = await getRazorpay().orders.create({
+      amount: Math.round(amount * 100), // amount in paise
+      currency: "INR",
+      receipt: orderNumber,
+      notes: { orderNumber },
+    })
   } catch (rzpErr) {
     const msg = rzpErr?.error?.description || rzpErr?.message || "Razorpay order creation failed"
     const err = new Error(msg)
-    err.statusCode = rzpErr?.statusCode || 502
+    err.statusCode = 502
     throw err
   }
 
-  // Create Order in database
-  const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`
   const order = await Order.create({
     orderNumber,
-    customerName,
-    customerEmail,
-    items: orderItems,
-    itemsCount: items.reduce((acc, item) => acc + item.quantity, 0),
-    amount: totalAmount,
+    user: req.user._id,
+    customerName: req.user.name,
+    customerEmail: req.user.email,
+    shippingAddress,
+    items: lines,
+    itemsCount,
+    amount,
+    paymentMethod: "razorpay",
     razorpayOrderId: razorpayOrder.id,
     status: "pending",
     paymentStatus: "awaiting",
   })
 
+  if (saveAddress) await rememberCheckoutDetails(req.user._id, shippingAddress)
+
   return sendSuccess(res, {
+    statusCode: 201,
     message: "Order created successfully",
     data: {
-      razorpayOrder,
       orderId: order._id,
+      orderNumber,
+      keyId: process.env.RAZORPAY_KEY_ID,
+      razorpayOrder: {
+        id: razorpayOrder.id,
+        amount: razorpayOrder.amount,
+        currency: razorpayOrder.currency,
+      },
     },
   })
 })
 
-// @desc Verify Razorpay payment
+// @desc Verify the payment the Razorpay checkout reports back
 // @route POST /api/v1/orders/verify
 // @access Private
 const verifyPayment = asyncHandler(async (req, res) => {
   const { razorpay_order_id, razorpay_payment_id, razorpay_signature, orderId } = req.body
 
-  const body = razorpay_order_id + "|" + razorpay_payment_id
+  const order = await findOwnOrder(orderId, req.user)
 
-  const expectedSignature = crypto
-    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "placeholder_secret")
-    .update(body.toString())
-    .digest("hex")
+  // The signature only proves *a* payment happened; it must be for this order
+  if (order.paymentMethod !== "razorpay" || order.razorpayOrderId !== razorpay_order_id) {
+    throw badRequest("This payment doesn't belong to this order")
+  }
 
-  const isAuthentic = expectedSignature === razorpay_signature
+  const expectedSignature = hmacHex(
+    process.env.RAZORPAY_KEY_SECRET,
+    `${razorpay_order_id}|${razorpay_payment_id}`
+  )
 
-  if (isAuthentic) {
-    // Update order status
-    const order = await Order.findById(orderId)
-    if (!order) {
-      throw notFound("Order not found")
-    }
-
-    order.paymentStatus = "paid"
-    order.razorpayPaymentId = razorpay_payment_id
-    order.razorpaySignature = razorpay_signature
-    order.status = "processing"
-    await order.save()
-
-    return sendSuccess(res, {
-      message: "Payment verified successfully",
-      data: order,
-    })
-  } else {
+  if (!signaturesMatch(expectedSignature, razorpay_signature)) {
     throw badRequest("Invalid payment signature")
   }
-})
 
-// @desc Send OTP to Guest Email
-// @route POST /api/v1/orders/send-otp
-// @access Public
-const sendOtp = asyncHandler(async (req, res) => {
-  const { email } = req.body
-  if (!email) throw badRequest("Email is required")
-
-  const otp = Math.floor(100000 + Math.random() * 900000).toString()
-  otpStore.set(email, { otp, expiresAt: Date.now() + 10 * 60 * 1000 }) // 10 mins expiry
-
-  const resend = new Resend(process.env.RESEND_API_KEY)
-  const from = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev"
-
-  await resend.emails.send({
-    from,
-    to: email,
-    subject: "Your Vedyara Verification Code",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #3E2F1C;">Verify Your Email</h2>
-        <p>Your one-time password for Vedyara guest checkout is:</p>
-        <h1 style="color: #D4AF37; font-size: 36px; letter-spacing: 4px;">${otp}</h1>
-        <p>This code will expire in 10 minutes.</p>
-      </div>
-    `,
+  const paid = await markOrderPaid(order, {
+    paymentId: razorpay_payment_id,
+    signature: razorpay_signature,
   })
 
-  return sendSuccess(res, { message: "OTP sent successfully" })
+  return sendSuccess(res, {
+    message: "Payment verified successfully",
+    data: { order: toCustomerOrder(paid) },
+  })
 })
 
-// @desc Verify OTP
-// @route POST /api/v1/orders/verify-otp
-// @access Public
-const verifyOtp = asyncHandler(async (req, res) => {
-  const { email, otp, name } = req.body
-  if (!email || !otp) throw badRequest("Email and OTP are required")
+// @desc Razorpay server-to-server events. Records payments even when the
+// customer closes the tab before their browser reports back.
+// @route POST /api/v1/orders/razorpay-webhook
+// @access Public (signed by Razorpay)
+const razorpayWebhook = asyncHandler(async (req, res) => {
+  const secret = process.env.RAZORPAY_WEBHOOK_SECRET
+  if (!secret) throw notFound("Webhook is not configured")
 
-  // const record = otpStore.get(email)
-  // if (!record) throw badRequest("No OTP found for this email")
-
-  // if (Date.now() > record.expiresAt) {
-  //   otpStore.delete(email)
-  //   throw badRequest("OTP has expired")
-  // }
-
-  // if (record.otp !== otp) {
-  //   throw badRequest("Invalid OTP")
-  // }
-
-  // otpStore.delete(email)
-
-  let user = await User.findOne({ email })
-  if (!user) {
-    user = await User.create({
-      name: name || "Guest User",
-      email,
-      password: crypto.randomBytes(16).toString("hex"),
-    })
+  if (!req.rawBody || !signaturesMatch(hmacHex(secret, req.rawBody), req.headers["x-razorpay-signature"])) {
+    throw badRequest("Invalid webhook signature")
   }
 
-  const token = generateToken(res, user._id)
+  const { event, payload } = req.body
+  const payment = payload?.payment?.entity
 
-  return sendSuccess(res, { 
-    message: "Email verified successfully",
-    data: {
-      token,
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      }
-    }
-  })
+  if ((event === "payment.captured" || event === "order.paid") && payment?.order_id) {
+    const order = await Order.findOne({ razorpayOrderId: payment.order_id })
+    if (order) await markOrderPaid(order, { paymentId: payment.id })
+  }
+
+  return sendSuccess(res, { message: "Webhook received" })
+})
+
+// @desc The customer closed the Razorpay window without paying
+// @route POST /api/v1/orders/:id/cancel-payment
+// @access Private
+const cancelPendingPayment = asyncHandler(async (req, res) => {
+  const order = await findOwnOrder(req.params.id, req.user)
+
+  await Order.updateOne(
+    { _id: order._id, paymentMethod: "razorpay", paymentStatus: "awaiting" },
+    { $set: { status: "cancelled", paymentStatus: "failed" } }
+  )
+
+  return sendSuccess(res, { message: "Payment cancelled" })
 })
 
 // @desc Create COD order
 // @route POST /api/v1/orders/create-cod
 // @access Private
 const createCodOrder = asyncHandler(async (req, res) => {
-  const { items, customerName, customerEmail, shippingAddress } = req.body
+  const { items, shippingAddress, saveAddress } = req.body
+  const { lines, amount, itemsCount } = await buildOrderLines(items)
+  const orderNumber = generateOrderNumber()
 
-  if (!items || items.length === 0) throw badRequest("No items in order")
-  if (!shippingAddress) throw badRequest("Shipping address is required")
-
-  let totalAmount = 0
-  const orderItems = []
-
-  for (const item of items) {
-    const product = await Product.findById(item.productId)
-    if (!product) throw notFound(`Product not found: ${item.productId}`)
-    const price = product.discountedPrice || product.price
-    totalAmount += price * item.quantity
-    orderItems.push({ product: product._id, quantity: item.quantity, price })
+  const { shortLine, taken } = await takeStock(lines)
+  if (shortLine) {
+    throw badRequest(`Sorry, ${shortLine.name} just went out of stock`)
   }
 
-  const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`
-  const order = await Order.create({
-    orderNumber,
-    customerName,
-    customerEmail,
-    shippingAddress,
-    items: orderItems,
-    itemsCount: items.reduce((acc, item) => acc + item.quantity, 0),
-    amount: totalAmount,
-    paymentMethod: "cod",
-    status: "processing",
-    paymentStatus: "awaiting",
-  })
+  let order
+  try {
+    order = await Order.create({
+      orderNumber,
+      user: req.user._id,
+      customerName: req.user.name,
+      customerEmail: req.user.email,
+      shippingAddress,
+      items: lines,
+      itemsCount,
+      amount,
+      paymentMethod: "cod",
+      status: "processing",
+      paymentStatus: "awaiting",
+      stockDeducted: true,
+    })
+  } catch (error) {
+    await restoreStock(taken)
+    throw error
+  }
+
+  await logStockMovement(taken, { type: "sold", note: `Order ${orderNumber}`, userId: req.user._id })
+  if (saveAddress) await rememberCheckoutDetails(req.user._id, shippingAddress)
 
   return sendSuccess(res, {
+    statusCode: 201,
     message: "Order placed successfully",
-    data: { orderId: order._id, orderNumber: order.orderNumber },
+    data: { order: toCustomerOrder(order) },
   })
 })
 
@@ -242,16 +304,17 @@ const createCodOrder = asyncHandler(async (req, res) => {
 // @route GET /api/v1/orders/myorders
 // @access Private
 const getMyOrders = asyncHandler(async (req, res) => {
-  if (!req.user || !req.user.email) {
-    throw unauthorized("Not authorized")
-  }
-  const orders = await Order.find({ customerEmail: req.user.email })
-    .populate("items.product")
+  const orders = await Order.find({
+    // Orders from before accounts were linked only carry the email
+    $or: [{ user: req.user._id }, { customerEmail: req.user.email }],
+    $nor: [ABANDONED_ONLINE],
+  })
+    .populate("items.product", "name slug images")
     .sort({ createdAt: -1 })
-    
+
   return sendSuccess(res, {
     message: "Orders fetched successfully",
-    data: orders,
+    data: orders.map(toCustomerOrder),
   })
 })
 
@@ -285,9 +348,9 @@ const trackOrder = asyncHandler(async (req, res) => {
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       items: order.items.map((item) => ({
-        name: item.product?.name || "Product",
+        name: item.name || item.product?.name || "Product",
         slug: item.product?.slug || null,
-        image: item.product?.images?.[0] || null,
+        image: item.image || item.product?.images?.[0] || null,
         unit: item.product?.unit || null,
         quantity: item.quantity,
         price: item.price,
@@ -296,4 +359,14 @@ const trackOrder = asyncHandler(async (req, res) => {
   })
 })
 
-export { createRazorpayOrder, verifyPayment, sendOtp, verifyOtp, getMyOrders, createCodOrder, trackOrder }
+export {
+  ABANDONED_ONLINE,
+  cancelPendingPayment,
+  createCodOrder,
+  createRazorpayOrder,
+  getMyOrders,
+  getPaymentConfig,
+  razorpayWebhook,
+  trackOrder,
+  verifyPayment,
+}

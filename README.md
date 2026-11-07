@@ -51,6 +51,40 @@ Authorization: Bearer <token>
 
 Supports pagination, type filtering, product filtering, product name/SKU search, and sorting by `createdAt`, `quantity`, or `type`.
 
+## Storefront checkout
+
+Customers check out without a password. The first order with a new email creates the account, and the address used is saved to the profile. A returning email has to enter a 6-digit code sent by email before the order is placed. The same code flow powers `/login`.
+
+### Environment
+
+```js
+RAZORPAY_KEY_ID=rzp_live_xxx          // online payments are offered only when both keys are set
+RAZORPAY_KEY_SECRET=xxx
+RAZORPAY_WEBHOOK_SECRET=xxx           // optional, recommended (see below)
+RESEND_API_KEY=re_xxx                 // sign-in codes
+RESEND_FROM_EMAIL=Vedyara <orders@your-verified-domain.in>
+```
+
+`RESEND_FROM_EMAIL` must be on a domain verified in Resend; a Gmail address is rejected. With `NODE_ENV=development`, codes are also printed to the server log so checkout can be tested without email.
+
+### Razorpay webhook
+
+In the Razorpay dashboard, add a webhook to `https://<backend>/api/v1/orders/razorpay-webhook` for the `payment.captured` and `order.paid` events, using the same secret as `RAZORPAY_WEBHOOK_SECRET`. This records payments even if the customer closes the tab before the site confirms them.
+
+### Main endpoints
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/api/v1/orders/payment-config` | Which payment methods to show |
+| POST | `/api/v1/users/checkout-auth` | `{ name, email, phone }` → session, or `{ otpRequired: true }` |
+| POST | `/api/v1/users/otp/request`, `/otp/verify` | Email sign-in code |
+| POST | `/api/v1/orders/create-cod` | `{ items, shippingAddress, saveAddress }` |
+| POST | `/api/v1/orders/create`, `/verify` | Razorpay order + signature check |
+| POST | `/api/v1/cart/merge`, `/api/v1/wishlist/merge` | Fold a guest cart/wishlist into the account |
+| PATCH | `/api/admin/orders/:id/status` | Cancelling puts the stock back |
+
+Prices and stock are always taken from the database, never from the request. COD orders take stock when placed; online orders take it once payment is confirmed.
+
 This is a MERN (MongoDB, Express.js, React, Node.js) authentication template that demonstrates how user authentication works in a MERN stack application using JWT (JSON Web Tokens) and bcryptjs for password hashing. This template provides a basic structure and functionality for user registration, login, authentication and profile update, which you can use as a starting point for building your own secure web applications.
 
 ## Features

@@ -3,69 +3,92 @@ import User from "../models/userModel.js"
 import Product from "../models/productModel.js"
 import { notFound, badRequest } from "../utils/apiError.js"
 import { sendSuccess } from "../utils/apiResponse.js"
+import { getUnitPrice } from "../utils/orderUtils.js"
 
 // Helper to format cart for frontend
 const formatCart = (user) => {
-  const items = user.cart.map((item) => ({
-    productId: item.product._id,
-    name: item.product.name,
-    price: item.product.discountedPrice || item.product.price,
-    image: item.product.images[0] || "",
-    quantity: item.quantity,
-    slug: item.product.slug,
-  }))
+  const items = user.cart
+    // Products deleted by the admin populate as null
+    .filter((item) => item.product)
+    .map((item) => ({
+      productId: item.product._id,
+      name: item.product.name,
+      price: getUnitPrice(item.product),
+      mrp: item.product.price,
+      image: item.product.images[0] || "",
+      quantity: item.quantity,
+      slug: item.product.slug,
+      unit: item.product.unit,
+      stock: item.product.inventoryTracking ? item.product.stock : null,
+      available:
+        item.product.status === "active" &&
+        (!item.product.inventoryTracking || item.product.stock >= item.quantity),
+    }))
 
   const totalAmount = items.reduce((acc, item) => acc + item.price * item.quantity, 0)
 
   return { items, totalAmount }
 }
 
+const sendCart = async (res, userId, message) => {
+  const user = await User.findById(userId).populate("cart.product")
+
+  return sendSuccess(res, {
+    message,
+    data: formatCart(user),
+  })
+}
+
+const findSellableProduct = async (productId) => {
+  const product = await Product.findById(productId)
+
+  if (!product || product.status === "inactive" || product.status === "draft") {
+    throw notFound("Product not found")
+  }
+
+  if (product.status === "out_of_stock" || (product.inventoryTracking && product.stock <= 0)) {
+    throw badRequest(`${product.name} is out of stock`)
+  }
+
+  return product
+}
+
+const assertInStock = (product, quantity) => {
+  if (product.inventoryTracking && quantity > product.stock) {
+    throw badRequest(`Only ${product.stock} of ${product.name} left in stock`)
+  }
+}
+
 // @desc Get user cart
 // @route GET /api/v1/cart
 // @access Private
 const getCart = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id).populate("cart.product")
-  
-  return sendSuccess(res, {
-    message: "Cart fetched successfully",
-    data: formatCart(user),
-  })
+  return sendCart(res, req.user._id, "Cart fetched successfully")
 })
 
 // @desc Add item to cart
 // @route POST /api/v1/cart
 // @access Private
 const addToCart = asyncHandler(async (req, res) => {
-  const { productId, quantity = 1 } = req.body
+  const { productId, quantity } = req.body
 
-  if (!productId) {
-    throw badRequest("Product ID is required")
-  }
-
-  const product = await Product.findById(productId)
-  if (!product) {
-    throw notFound("Product not found")
-  }
-
+  const product = await findSellableProduct(productId)
   const user = await User.findById(req.user._id)
 
-  const cartItemIndex = user.cart.findIndex(
-    (item) => item.product.toString() === productId
-  )
+  const cartItem = user.cart.find((item) => item.product.toString() === productId)
+  const nextQuantity = (cartItem?.quantity || 0) + quantity
 
-  if (cartItemIndex > -1) {
-    user.cart[cartItemIndex].quantity += Number(quantity)
+  assertInStock(product, nextQuantity)
+
+  if (cartItem) {
+    cartItem.quantity = nextQuantity
   } else {
-    user.cart.push({ product: productId, quantity: Number(quantity) })
+    user.cart.push({ product: productId, quantity })
   }
 
   await user.save()
-  const updatedUser = await User.findById(req.user._id).populate("cart.product")
 
-  return sendSuccess(res, {
-    message: "Item added to cart",
-    data: formatCart(updatedUser),
-  })
+  return sendCart(res, req.user._id, "Item added to cart")
 })
 
 // @desc Update cart item quantity
@@ -75,10 +98,6 @@ const updateCartItem = asyncHandler(async (req, res) => {
   const { productId } = req.params
   const { quantity } = req.body
 
-  if (quantity < 1) {
-    throw badRequest("Quantity must be at least 1")
-  }
-
   const user = await User.findById(req.user._id)
   const cartItem = user.cart.find((item) => item.product.toString() === productId)
 
@@ -86,14 +105,15 @@ const updateCartItem = asyncHandler(async (req, res) => {
     throw notFound("Item not found in cart")
   }
 
-  cartItem.quantity = Number(quantity)
+  // Lowering a quantity is always allowed, even past current stock
+  if (quantity > cartItem.quantity) {
+    assertInStock(await findSellableProduct(productId), quantity)
+  }
+
+  cartItem.quantity = quantity
   await user.save()
-  
-  const updatedUser = await User.findById(req.user._id).populate("cart.product")
-  return sendSuccess(res, {
-    message: "Cart updated",
-    data: formatCart(updatedUser),
-  })
+
+  return sendCart(res, req.user._id, "Cart updated")
 })
 
 // @desc Remove item from cart
@@ -104,14 +124,58 @@ const removeFromCart = asyncHandler(async (req, res) => {
 
   const user = await User.findById(req.user._id)
   user.cart = user.cart.filter((item) => item.product.toString() !== productId)
-  
+
   await user.save()
-  
-  const updatedUser = await User.findById(req.user._id).populate("cart.product")
+
+  return sendCart(res, req.user._id, "Item removed from cart")
+})
+
+// @desc Empty the cart
+// @route DELETE /api/v1/cart
+// @access Private
+const clearCart = asyncHandler(async (req, res) => {
+  await User.updateOne({ _id: req.user._id }, { $set: { cart: [] } })
+
   return sendSuccess(res, {
-    message: "Item removed from cart",
-    data: formatCart(updatedUser),
+    message: "Cart cleared",
+    data: { items: [], totalAmount: 0 },
   })
 })
 
-export { getCart, addToCart, updateCartItem, removeFromCart }
+// @desc Fold a guest cart into the account after sign-in. Quantities add up,
+// capped at available stock; unavailable products are skipped.
+// @route POST /api/v1/cart/merge
+// @access Private
+const mergeCart = asyncHandler(async (req, res) => {
+  const { items } = req.body
+
+  const user = await User.findById(req.user._id)
+  const products = await Product.find({
+    _id: { $in: items.map((item) => item.productId) },
+    status: "active",
+  })
+  const byId = new Map(products.map((p) => [p._id.toString(), p]))
+
+  for (const { productId, quantity } of items) {
+    const product = byId.get(productId)
+    if (!product) continue
+
+    const cartItem = user.cart.find((item) => item.product.toString() === productId)
+    const wanted = (cartItem?.quantity || 0) + quantity
+    const nextQuantity = product.inventoryTracking ? Math.min(wanted, product.stock) : wanted
+
+    if (nextQuantity < 1) continue
+
+    if (cartItem) {
+      cartItem.quantity = nextQuantity
+    } else {
+      user.cart.push({ product: productId, quantity: nextQuantity })
+    }
+  }
+
+  await user.save()
+
+  return sendCart(res, req.user._id, "Cart merged")
+})
+
+export { getCart, addToCart, updateCartItem, removeFromCart, clearCart, mergeCart }

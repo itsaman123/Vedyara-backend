@@ -44,6 +44,33 @@ const userSchema = mongoose.Schema(
       type: Date,
       required: false,
     },
+    // Set once the customer proves they own the email (OTP sign-in). Accounts
+    // created at checkout start unverified.
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    // Embedded in every JWT; bumping it signs out all existing sessions.
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
+    otpHash: {
+      type: String,
+      required: false,
+    },
+    otpExpires: {
+      type: Date,
+      required: false,
+    },
+    otpAttempts: {
+      type: Number,
+      default: 0,
+    },
+    otpSentAt: {
+      type: Date,
+      required: false,
+    },
     cart: [
       {
         product: {
@@ -68,6 +95,7 @@ const userSchema = mongoose.Schema(
         phone: { type: String, required: true },
         address: { type: String, required: true },
         city: { type: String, required: true },
+        state: { type: String, default: "" },
         pincode: { type: String, required: true },
         isDefault: { type: Boolean, default: false }
       }
@@ -91,6 +119,38 @@ userSchema.pre("save", async function (next) {
 
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password)
+}
+
+// Adds an address unless the same one is already saved. The first address,
+// or one saved with makeDefault, becomes the default. Caller saves the user.
+userSchema.methods.saveAddress = function (address, { makeDefault = false } = {}) {
+  const normalize = (value) => String(value || "").trim().toLowerCase()
+  const existing = this.addresses.find(
+    (a) =>
+      normalize(a.address) === normalize(address.address) &&
+      normalize(a.pincode) === normalize(address.pincode) &&
+      normalize(a.phone) === normalize(address.phone)
+  )
+
+  const target = existing || this.addresses.create(address)
+
+  if (existing) {
+    Object.assign(existing, {
+      name: address.name,
+      city: address.city,
+      state: address.state || existing.state,
+    })
+  } else {
+    this.addresses.push(target)
+  }
+
+  if (makeDefault || this.addresses.length === 1 || !this.addresses.some((a) => a.isDefault)) {
+    this.addresses.forEach((a) => {
+      a.isDefault = a._id.equals(target._id)
+    })
+  }
+
+  return target
 }
 
 const User = mongoose.model("User", userSchema)

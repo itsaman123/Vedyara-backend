@@ -20,7 +20,7 @@ const loginAdmin = asyncHandler(async (req, res) => {
     throw unauthorized("Invalid admin email or password")
   }
 
-  const token = generateToken(res, admin._id)
+  const token = generateToken(res, admin._id, admin.tokenVersion)
 
   return sendSuccess(res, {
     message: "Admin authenticated successfully",

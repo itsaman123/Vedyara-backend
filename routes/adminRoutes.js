@@ -33,8 +33,10 @@ import {
   updateCombo,
 } from "../controllers/adminComboController.js"
 import {
+  getOrderById,
   getOrderSummary,
   getOrders,
+  updateOrderStatus,
 } from "../controllers/adminOrderController.js"
 import {
   getCloudinarySignature,
@@ -67,7 +69,10 @@ import {
   comboListQuerySchema,
   updateComboSchema,
 } from "../validations/comboValidation.js"
-import { orderListQuerySchema } from "../validations/orderValidation.js"
+import {
+  orderListQuerySchema,
+  updateOrderStatusSchema,
+} from "../validations/orderValidation.js"
 
 const router = express.Router()
 
@@ -198,6 +203,14 @@ router.get(
   getOrders
 )
 router.get("/orders/summary", protect, adminOnly, getOrderSummary)
+router.get("/orders/:id", protect, adminOnly, getOrderById)
+router.patch(
+  "/orders/:id/status",
+  protect,
+  adminOnly,
+  validateRequest(updateOrderStatusSchema),
+  updateOrderStatus
+)
 
 router.get(
   "/inventory",

@@ -18,10 +18,17 @@ const protect = asyncHandler(async (req, res, next) => {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET)
 
-      req.user = await User.findById(decoded.userId).select("-password")
+      req.user = await User.findById(decoded.userId).select(
+        "-password -otpHash -resetPasswordToken -resetPasswordExpires"
+      )
 
       if (!req.user) {
         throw unauthorized("User linked to this token no longer exists")
+      }
+
+      // Tokens issued before the last session reset are no longer valid
+      if ((decoded.tv ?? 0) !== (req.user.tokenVersion ?? 0)) {
+        throw unauthorized("Session expired, please sign in again")
       }
 
       next()

@@ -9,6 +9,11 @@ const orderSchema = mongoose.Schema(
       trim: true,
       index: true,
     },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      index: true,
+    },
     customerName: {
       type: String,
       required: true,
@@ -26,6 +31,14 @@ const orderSchema = mongoose.Schema(
           type: mongoose.Schema.Types.ObjectId,
           ref: "Product",
           required: true,
+        },
+        // Snapshot at purchase time, so history survives product edits
+        name: {
+          type: String,
+          trim: true,
+        },
+        image: {
+          type: String,
         },
         quantity: {
           type: Number,
@@ -69,10 +82,17 @@ const orderSchema = mongoose.Schema(
       phone: { type: String, trim: true },
       address: { type: String, trim: true },
       city: { type: String, trim: true },
+      state: { type: String, trim: true },
       pincode: { type: String, trim: true },
+    },
+    // True while this order holds stock; cleared when a cancel puts it back
+    stockDeducted: {
+      type: Boolean,
+      default: false,
     },
     razorpayOrderId: {
       type: String,
+      index: true,
     },
     razorpayPaymentId: {
       type: String,

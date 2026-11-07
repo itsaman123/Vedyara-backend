@@ -2,20 +2,63 @@ import asyncHandler from "express-async-handler"
 import crypto from "crypto"
 import User from "../models/userModel.js"
 import generateToken from "../utils/generateToken.js"
-import { badRequest, conflict, notFound, unauthorized } from "../utils/apiError.js"
+import { badRequest, conflict, createError, notFound, unauthorized } from "../utils/apiError.js"
 import { sendSuccess } from "../utils/apiResponse.js"
 import sendPasswordResetEmail from "../utils/sendPasswordResetEmail.js"
+import sendOtpEmail from "../utils/sendOtpEmail.js"
+
+const OTP_TTL_MS = 10 * 60 * 1000
+const OTP_RESEND_COOLDOWN_MS = 30 * 1000
+const OTP_MAX_ATTEMPTS = 5
 
 const buildUserPayload = (user) => ({
   _id: user._id,
   name: user.name,
   email: user.email,
+  phone: user.phone || "",
   role: user.role,
+  emailVerified: Boolean(user.emailVerified),
   addresses: user.addresses || [],
 })
 
 const hashResetToken = (token) =>
   crypto.createHash("sha256").update(token).digest("hex")
+
+const clearOtp = (user) => {
+  user.otpHash = undefined
+  user.otpExpires = undefined
+  user.otpAttempts = 0
+}
+
+const issueOtp = async (user) => {
+  if (user.otpSentAt && Date.now() - user.otpSentAt.getTime() < OTP_RESEND_COOLDOWN_MS) {
+    throw createError(429, "A code was just sent. Please wait a few seconds before requesting another.")
+  }
+
+  const otp = crypto.randomInt(100000, 1000000).toString()
+
+  user.otpHash = hashResetToken(otp)
+  user.otpExpires = Date.now() + OTP_TTL_MS
+  user.otpAttempts = 0
+  user.otpSentAt = Date.now()
+  await user.save({ validateBeforeSave: false })
+
+  await sendOtpEmail({ email: user.email, name: user.name, otp })
+}
+
+const sendSession = (res, user, { statusCode = 200, message }) => {
+  const token = generateToken(res, user._id, user.tokenVersion)
+
+  return sendSuccess(res, {
+    statusCode,
+    message,
+    data: {
+      otpRequired: false,
+      token,
+      user: buildUserPayload(user),
+    },
+  })
+}
 
 // @desc user token
 // route /api/users/login
@@ -31,7 +74,7 @@ const loginUser = asyncHandler(async (req, res) => {
   const user = await User.findOne({ email })
 
   if (user && (await user.matchPassword(password))) {
-    const token = generateToken(res, user._id)
+    const token = generateToken(res, user._id, user.tokenVersion)
 
     return sendSuccess(res, {
       statusCode: 200,
@@ -70,7 +113,7 @@ const registerUser = asyncHandler(async (req, res) => {
     password,
   })
 
-  const token = generateToken(res, user._id)
+  const token = generateToken(res, user._id, user.tokenVersion)
 
   return sendSuccess(res, {
     statusCode: 201,
@@ -130,10 +173,16 @@ const updateUserProfile = asyncHandler(async (req, res) => {
     if (existingUser) {
       throw conflict("Email is already in use")
     }
+
+    user.emailVerified = false
   }
 
   user.name = nextName || user.name
   user.email = nextEmail || user.email
+
+  if (req.body.phone !== undefined) {
+    user.phone = req.body.phone || undefined
+  }
 
   if (nextPassword) {
     user.password = nextPassword
@@ -159,29 +208,9 @@ const addUserAddress = asyncHandler(async (req, res) => {
     throw notFound("User not found")
   }
 
-  const { name, phone, address, city, pincode, isDefault } = req.body
+  const { isDefault, ...address } = req.body
 
-  if (!name || !phone || !address || !city || !pincode) {
-    throw badRequest("All address fields are required")
-  }
-
-  const newAddress = {
-    name,
-    phone,
-    address,
-    city,
-    pincode,
-    isDefault: isDefault || false
-  }
-
-  // If this is set to default or it's the first address, we might want to unset others
-  if (newAddress.isDefault) {
-    user.addresses.forEach(a => { a.isDefault = false })
-  } else if (user.addresses.length === 0) {
-    newAddress.isDefault = true
-  }
-
-  user.addresses.push(newAddress)
+  user.saveAddress(address, { makeDefault: isDefault })
   const updatedUser = await user.save()
 
   return sendSuccess(res, {
@@ -220,6 +249,132 @@ const deleteUserAddress = asyncHandler(async (req, res) => {
       user: buildUserPayload(updatedUser),
     },
   })
+})
+
+// @desc make an address the default
+// route /api/users/addresses/:id/default
+// @method patch
+const setDefaultAddress = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id)
+
+  if (!user) {
+    throw notFound("User not found")
+  }
+
+  const target = user.addresses.find((a) => a._id.toString() === req.params.id)
+
+  if (!target) {
+    throw notFound("Address not found")
+  }
+
+  user.addresses.forEach((a) => {
+    a.isDefault = a._id.equals(target._id)
+  })
+  const updatedUser = await user.save()
+
+  return sendSuccess(res, {
+    message: "Default address updated",
+    data: {
+      user: buildUserPayload(updatedUser),
+    },
+  })
+})
+
+// @desc identify a shopper at checkout. A new email gets an account straight
+// away; an existing email must prove ownership with a one-time code first.
+// route /api/users/checkout-auth
+// @method post
+const checkoutAuth = asyncHandler(async (req, res) => {
+  const { name, email, phone } = req.body
+
+  const existingUser = await User.findOne({ email })
+
+  if (!existingUser) {
+    try {
+      const user = await User.create({
+        name,
+        email,
+        phone,
+        password: crypto.randomBytes(16).toString("hex"),
+      })
+
+      return sendSession(res, user, { statusCode: 201, message: "Account created" })
+    } catch (error) {
+      // Lost a race with a parallel request for the same email
+      if (error.code !== 11000) throw error
+    }
+  }
+
+  const user = existingUser || (await User.findOne({ email }))
+  await issueOtp(user)
+
+  return sendSuccess(res, {
+    message: "Verification code sent",
+    data: { otpRequired: true, email },
+  })
+})
+
+// @desc email a sign-in code to an existing customer
+// route /api/users/otp/request
+// @method post
+const requestOtp = asyncHandler(async (req, res) => {
+  const user = await User.findOne({ email: req.body.email })
+
+  if (!user) {
+    throw notFound(
+      "No account found for this email. Your account is created automatically with your first order."
+    )
+  }
+
+  await issueOtp(user)
+
+  return sendSuccess(res, {
+    message: "Verification code sent",
+    data: { otpRequired: true, email: user.email },
+  })
+})
+
+// @desc sign in with an emailed one-time code
+// route /api/users/otp/verify
+// @method post
+const verifyOtp = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body
+  const user = await User.findOne({ email })
+
+  if (!user || !user.otpHash) {
+    throw badRequest("Please request a new code")
+  }
+
+  if (user.otpExpires.getTime() < Date.now()) {
+    clearOtp(user)
+    await user.save({ validateBeforeSave: false })
+    throw badRequest("This code has expired. Please request a new one")
+  }
+
+  if (user.otpAttempts >= OTP_MAX_ATTEMPTS) {
+    clearOtp(user)
+    await user.save({ validateBeforeSave: false })
+    throw badRequest("Too many incorrect attempts. Please request a new code")
+  }
+
+  if (hashResetToken(otp) !== user.otpHash) {
+    user.otpAttempts += 1
+    await user.save({ validateBeforeSave: false })
+    throw badRequest("Incorrect code. Please check and try again")
+  }
+
+  clearOtp(user)
+
+  // First proof of ownership: sign out any session created before it, e.g.
+  // by someone who checked out with this email before the real owner did
+  if (!user.emailVerified) {
+    user.emailVerified = true
+    user.tokenVersion = (user.tokenVersion || 0) + 1
+  }
+
+  await user.save({ validateBeforeSave: false })
+
+  return sendSession(res, user, { message: "Signed in successfully" })
 })
 
 // @desc request password reset email
@@ -307,4 +462,8 @@ export {
   resetPassword,
   addUserAddress,
   deleteUserAddress,
+  setDefaultAddress,
+  checkoutAuth,
+  requestOtp,
+  verifyOtp,
 }

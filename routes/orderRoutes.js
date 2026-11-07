@@ -1,16 +1,27 @@
 import express from "express"
-import { createRazorpayOrder, verifyPayment, sendOtp, verifyOtp, getMyOrders, createCodOrder, trackOrder } from "../controllers/orderController.js"
+import {
+  cancelPendingPayment,
+  createCodOrder,
+  createRazorpayOrder,
+  getMyOrders,
+  getPaymentConfig,
+  razorpayWebhook,
+  trackOrder,
+  verifyPayment,
+} from "../controllers/orderController.js"
 import { protect } from "../middlewares/authMiddleware.js"
+import validateRequest from "../middlewares/validateRequest.js"
+import { placeOrderSchema, verifyPaymentSchema } from "../validations/orderValidation.js"
 
 const router = express.Router()
 
-// We can make these protected if we want, but for Buy Now (guest), we might want them accessible
-// For now, let's keep them public so guests can buy too, or the controller handles it.
-router.post("/create", createRazorpayOrder)
-router.post("/verify", verifyPayment)
-router.post("/send-otp", sendOtp)
-router.post("/verify-otp", verifyOtp)
-router.post("/create-cod", protect, createCodOrder)
+router.get("/payment-config", getPaymentConfig)
+router.post("/razorpay-webhook", razorpayWebhook)
+
+router.post("/create", protect, validateRequest(placeOrderSchema), createRazorpayOrder)
+router.post("/verify", protect, validateRequest(verifyPaymentSchema), verifyPayment)
+router.post("/create-cod", protect, validateRequest(placeOrderSchema), createCodOrder)
+router.post("/:id/cancel-payment", protect, cancelPendingPayment)
 
 router.get("/myorders", protect, getMyOrders)
 router.get("/track", trackOrder)

@@ -33,7 +33,16 @@ app.use(
   })
 )
 
-app.use(express.json())
+app.use(
+  express.json({
+    // Webhook signatures are computed over the exact bytes received
+    verify: (req, _res, buf) => {
+      if (req.originalUrl.startsWith("/api/v1/orders/razorpay-webhook")) {
+        req.rawBody = buf
+      }
+    },
+  })
+)
 app.use(express.urlencoded({ extended: true }))
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")))
 

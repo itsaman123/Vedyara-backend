@@ -4,12 +4,15 @@ import mongoose from "mongoose"
 import { notFound } from "../utils/apiError.js"
 import { sendSuccess } from "../utils/apiResponse.js"
 
+// Sold-out products stay visible (marked out of stock) so links and SEO keep working
+const PUBLIC_STATUSES = ["active", "out_of_stock"]
+
 // @desc Get all products (public)
 // @route GET /api/v1/products
 const getProducts = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, search, category, featured, sortBy = "createdAt", sortOrder = "desc" } = req.query
 
-  const filter = { status: "active" } // Only active products for public
+  const filter = { status: { $in: PUBLIC_STATUSES } }
 
   if (category && category !== "all") {
     // Case-insensitive exact match — admin data mixes "honey" and "Honey"
@@ -61,10 +64,10 @@ const getProductBySlug = asyncHandler(async (req, res) => {
   if (mongoose.Types.ObjectId.isValid(param)) {
     product = await Product.findById(param)
   } else {
-    product = await Product.findOne({ slug: param, status: "active" })
+    product = await Product.findOne({ slug: param, status: { $in: PUBLIC_STATUSES } })
   }
 
-  if (!product || product.status !== "active") {
+  if (!product || !PUBLIC_STATUSES.includes(product.status)) {
     throw notFound("Product not found")
   }
 
